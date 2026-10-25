@@ -45,6 +45,9 @@ foods.json        成分表をアプリ用に変換したデータ（2,538食品
 tools/
   convert_foods.py  成分表のExcel → foods.json
   extract_mets.py   メッツ表のPDF → 全活動のMETs一覧（body.js の値の確認用）
+tests/
+  load-app.js       テスト用に、ブラウザなしで app.js を読み込む
+  *.test.js         テスト
 ```
 
 ## 使い方
@@ -55,6 +58,9 @@ tools/
 # ローカルで試すとき
 python3 -m http.server 8000
 # → http://localhost:8000 を開く
+
+# テストを実行する（Node.js 18 以上）
+node --test
 ```
 
 ## データの保存

@@ -33,6 +33,7 @@ HTML / CSS / JavaScript だけで作っています（ビルドなし、ライ�
 | `foods.json` | 成分表を変換したデータ（2,538食品＋呼び名68件）。手で編集しない |
 | `tools/convert_foods.py` | 成分表の Excel → `foods.json`。呼び名は `ALIASES` で定義 |
 | `tools/extract_mets.py` | メッツ表の PDF → 全活動の METs 一覧（`body.js` の値の確認用） |
+| `tests/` | `node --test` で動くテスト。`load-app.js` がブラウザなしで app.js を読み込む |
 
 スクリプトの読み込み順は `nutrients.js` → `body.js` → `app.js`。モジュールは使わず、グローバル関数で連携しています。
 
@@ -90,3 +91,4 @@ HTML / CSS / JavaScript だけで作っています（ビルドなし、ライ�
 
 - `python3 -m http.server 8000` で開く（`foods.json` の読み込みにサーバーが必要）。
 - 計算は `node` で関数単体を確認できる（`nutrients.js`・`body.js` は `vm` で読み込める）。
+- テストは `node --test`（Node.js 18 以上。ライブラリは不要）。機能を足したら `tests/` にテストも足す。
