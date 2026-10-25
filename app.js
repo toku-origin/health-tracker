@@ -3,12 +3,15 @@
 /* =========================================================
    健康トラッカー（プロトタイプ）
    - 記録はこの端末のブラウザ（localStorage）に保存する
+   - 消した記録・マイ食品は「削除の印」として残す（同期のため。設計書 4.5）
    - 1日1件の記録を { "YYYY-MM-DD": 記録 } の形で持つ
    - 栄養素の定義・成分表の検索・計算は nutrients.js にある
    - 体重・運動の消費カロリー・基礎代謝の計算は body.js にある
    ========================================================= */
 
 const STORAGE_KEY = 'health-tracker:v1';
+// データの形の版番号。形を変えたら上げて、loadData で古い形を読み替える
+const SCHEMA_VERSION = 1;
 const INTENSITY = [{ v: 1, label: '軽い' }, { v: 2, label: '普通' }, { v: 3, label: 'きつい' }];
 const MEAL_KINDS = ['朝食', '昼食', '夕食', '間食'];
 const CONDITION_ROWS = [
@@ -21,7 +24,7 @@ const VIEWS = ['today', 'week', 'foods', 'config'];
 
 // アプリ全体の状態
 const state = {
-  data: null,        // 保存されている全データ { records, settings, myFoods }
+  data: null,        // 保存されている全データ { records, settings, myFoods }（削除した日・食品は「削除の印」で残る）
   draft: null,       // 今画面で編集中の1日分の記録
   dirty: false,      // 未保存の変更があるか
   view: 'today',     // 表示中の画面
@@ -123,9 +126,8 @@ function shortDate(str) { const [, m, d] = str.split('-').map(Number); return `$
 // 日付ごとの体重 { "2026-10-26": 68.4 }。編集中の日は画面の値を使う
 function weightMap() {
   const map = {};
-  Object.keys(state.data.records).forEach((d) => {
-    const b = state.data.records[d].body;
-    if (b && b.weightKg != null) map[d] = b.weightKg;
+  liveRecords().forEach((r) => {
+    if (r.body && r.body.weightKg != null) map[r.date] = r.body.weightKg;
   });
   if (state.draft) {
     const w = state.draft.body.weightKg;
@@ -254,12 +256,40 @@ function isEmptyRecord(r) {
     && r.body.weightKg == null;
 }
 
+/* ---------- 削除の印 ----------
+   記録やマイ食品を消すときは、データを消さずに { deleted: true, updatedAt } の印に置き換える。
+   PCとスマホで同期するとき、「消した」のか「まだ届いていない」のかを区別するため（設計書 4.5）。
+   画面に出すときは、次の関数を通して印のついたものを除く。 */
+
+// その日の記録。なければ、または削除の印なら null
+function getRecord(date) {
+  const r = state.data.records[date];
+  return r && !r.deleted ? r : null;
+}
+
+// 削除されていない記録の一覧（日付の古い順）
+function liveRecords() {
+  return Object.keys(state.data.records).sort()
+    .map((d) => state.data.records[d])
+    .filter((r) => !r.deleted);
+}
+
+// 削除の印を作る
+function deletedRecord(date) {
+  return { date, deleted: true, updatedAt: nowIsoWithOffset() };
+}
+
+// 削除されていないマイ食品
+function activeMyFoods() {
+  return state.data.myFoods.filter((f) => !f.deleted);
+}
+
 /* ---------- 保存と読み込み ---------- */
 
 // ブラウザに保存する。プライベートブラウズなどで失敗したら false
 function persist() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, ...state.data }));
     return true;
   } catch (e) {
     return false;
@@ -282,12 +312,21 @@ function mergeSettings(s) {
   };
 }
 
+// 古い形のデータを今の形に読み替える。版番号がないものは、版番号をつける前（0）として扱う
+function migrate(d) {
+  const version = d.schemaVersion || 0;
+  // 0 → 1：形はそのまま使える（削除の印と updatedAt は、これから保存するものにつく）
+  // 将来、形を変えたら「if (version < 2) { ... }」のように読み替えを足していく
+  if (version > SCHEMA_VERSION) console.warn('新しい版のデータです。アプリを更新してください', version);
+  return d;
+}
+
 // 保存済みデータを読み込む。初回はサンプルを入れる
 function loadData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const d = JSON.parse(raw);
+      const d = migrate(JSON.parse(raw));
       return { records: d.records || {}, settings: mergeSettings(d.settings), myFoods: d.myFoods || [] };
     }
   } catch (e) { /* 読めなければ新規として扱う */ }
@@ -306,7 +345,10 @@ function saveDraft() {
     e.kcal = exerciseKcal(e.mets, w, e.minutes);
   });
   if (isEmptyRecord(r)) {
-    delete state.data.records[r.date];
+    // 空になった日：サンプルはそのまま消す。自分の記録は「削除の印」を残す
+    const prev = state.data.records[r.date];
+    if (prev && prev.sample) delete state.data.records[r.date];
+    else if (prev && !prev.deleted) state.data.records[r.date] = deletedRecord(r.date);
   } else {
     delete r.sample; // 自分で保存した日はサンプル扱いを外す
     delete state.draft.sample;
@@ -409,7 +451,7 @@ function esc(s) {
 // 表示する日付を切り替える
 function setDate(date) {
   saveIfDirty();
-  const saved = state.data.records[date];
+  const saved = getRecord(date);
   state.draft = saved ? normalize(saved) : emptyRecord(date);
   state.dirty = false;
   state.search = null;
@@ -483,8 +525,8 @@ function updateBalance() {
 // これまでに使った運動の種類（新しい順）＋ 初期候補
 function exerciseTypes() {
   const used = [];
-  Object.keys(state.data.records).sort().reverse().forEach((date) => {
-    (state.data.records[date].exercise || []).forEach((e) => { if (e.type && !used.includes(e.type)) used.push(e.type); });
+  liveRecords().reverse().forEach((r) => {
+    (r.exercise || []).forEach((e) => { if (e.type && !used.includes(e.type)) used.push(e.type); });
   });
   Object.keys(state.data.settings.mets).forEach((t) => { if (!used.includes(t)) used.push(t); });
   return used.slice(0, 12);
@@ -655,8 +697,8 @@ function renderNutritionPanel() {
 function recentFoods() {
   const out = [];
   const seen = new Set();
-  Object.keys(state.data.records).sort().reverse().forEach((date) => {
-    (state.data.records[date].meals || []).forEach((m) => (m.items || []).forEach((it) => (it.ingredients || []).forEach((g) => {
+  liveRecords().reverse().forEach((r) => {
+    (r.meals || []).forEach((m) => (m.items || []).forEach((it) => (it.ingredients || []).forEach((g) => {
       if (!g.foodId || String(g.foodId).startsWith('my:') || seen.has(g.foodId)) return;
       seen.add(g.foodId);
       out.push({ id: g.foodId, label: g.name });
@@ -670,7 +712,7 @@ function renderSearchResults() {
   if (!ul) return;
   const q = state.search.query;
   if (FoodDB.status === 'loading') { ul.innerHTML = '<li class="msg">成分表を読み込んでいます…</li>'; return; }
-  const results = searchFoods(q, recentFoods(), state.data.myFoods);
+  const results = searchFoods(q, recentFoods(), activeMyFoods());
   let html = results.map((r) => `
     <li><button type="button" data-action="pick-food" data-ref="${esc(r.ref)}" data-label="${esc(r.label)}">
       <span class="r-name">${esc(r.label)}</span>
@@ -798,7 +840,7 @@ function onInput(e) {
 function renderWeek() {
   const today = todayStr();
   const days = [0, 1, 2, 3, 4, 5, 6].map((k) => addDays(today, -k));
-  const recs = days.map((d) => (state.data.records[d] ? normalize(state.data.records[d]) : null));
+  const recs = days.map((d) => (getRecord(d) ? normalize(getRecord(d)) : null));
   const filled = recs.filter(Boolean);
   const balances = recs.map((r) => (r ? dayBalance(r) : null));
   const map = weightMap();
@@ -918,6 +960,7 @@ function onMyFoodSubmit(e) {
     servingLabel: state.mfBasis === 'serving' ? ($('#mf-serving-label').value.trim() || '1食') : null,
     servingGrams: state.mfBasis === 'serving' && !Number.isNaN(grams) && grams > 0 ? grams : null,
     values,
+    updatedAt: nowIsoWithOffset(), // 2台で編集したとき、新しい方を残すため
   };
   const list = state.data.myFoods;
   const idx = list.findIndex((f) => f.id === food.id);
@@ -937,7 +980,7 @@ function onMyFoodSubmit(e) {
 }
 
 function renderMyFoods() {
-  const list = state.data.myFoods;
+  const list = activeMyFoods();
   $('#mf-list').innerHTML = list.length === 0
     ? '<p class="empty">まだ登録はありません。</p>'
     : list.map((f) => `
@@ -994,11 +1037,9 @@ function saveProfile(patch) {
 
 function exportJson() {
   const records = {};
-  Object.keys(state.data.records).sort().forEach((d) => {
-    const r = state.data.records[d];
-    if (!r.sample) records[d] = r;
-  });
-  return JSON.stringify({ records, myFoods: state.data.myFoods }, null, 2);
+  // サンプルと削除の印は含めない
+  liveRecords().forEach((r) => { if (!r.sample) records[r.date] = r; });
+  return JSON.stringify({ schemaVersion: SCHEMA_VERSION, records, myFoods: activeMyFoods() }, null, 2);
 }
 
 /* ---------- 画面の切り替えと表示 ---------- */
@@ -1067,7 +1108,7 @@ const actions = {
   'go-today': () => setDate(todayStr()),
   save: () => {
     saveDraft();
-    state.draft = normalize(state.data.records[state.draft.date] || emptyRecord(state.draft.date));
+    state.draft = normalize(getRecord(state.draft.date) || emptyRecord(state.draft.date));
     state.search = null;
     renderToday();
   },
@@ -1172,7 +1213,9 @@ const actions = {
   'mf-delete-ask': (el) => { state.mfDeleteAsk = el.dataset.id; renderMyFoods(); },
   'mf-delete-cancel': () => { state.mfDeleteAsk = null; renderMyFoods(); },
   'mf-delete': (el) => {
-    state.data.myFoods = state.data.myFoods.filter((f) => f.id !== el.dataset.id);
+    // 消さずに削除の印をつける。栄養の値は残すので、過去の記録のグラム数を直しても計算できる
+    const f = state.data.myFoods.find((m) => m.id === el.dataset.id);
+    if (f) Object.assign(f, { deleted: true, updatedAt: nowIsoWithOffset() });
     state.mfDeleteAsk = null;
     if (state.mfEditId === el.dataset.id) resetMyFoodForm();
     persist();
@@ -1205,7 +1248,12 @@ const actions = {
   'ask-delete-all': () => { $('#delete-confirm').hidden = false; },
   'cancel-delete': () => { $('#delete-confirm').hidden = true; },
   'delete-all': () => {
-    state.data.records = {};
+    // サンプルは消し、自分の記録は削除の印に置き換える
+    Object.keys(state.data.records).forEach((d) => {
+      const r = state.data.records[d];
+      if (r.sample) delete state.data.records[d];
+      else if (!r.deleted) state.data.records[d] = deletedRecord(d);
+    });
     persist();
     state.dirty = false;
     $('#delete-confirm').hidden = true;
@@ -1280,7 +1328,7 @@ function init() {
   // 成分表は大きいので、画面を出してから読み込む
   loadFoodDb().then(() => {
     if (resolveSampleIngredients() && !state.dirty) {
-      state.draft = state.data.records[state.draft.date] ? normalize(state.data.records[state.draft.date]) : state.draft;
+      state.draft = getRecord(state.draft.date) ? normalize(getRecord(state.draft.date)) : state.draft;
     }
     if (state.view === 'today') renderMeals();
     if (state.view === 'week') renderWeek();

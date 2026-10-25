@@ -45,6 +45,9 @@ foods.json        成分表をアプリ用に変換したデータ（2,538食品
 tools/
   convert_foods.py  成分表のExcel → foods.json
   extract_mets.py   メッツ表のPDF → 全活動のMETs一覧（body.js の値の確認用）
+tests/
+  load-app.js       テスト用に、ブラウザなしで app.js を読み込む
+  *.test.js         テスト
 ```
 
 ## 使い方
@@ -55,6 +58,9 @@ tools/
 # ローカルで試すとき
 python3 -m http.server 8000
 # → http://localhost:8000 を開く
+
+# テストを実行する（Node.js 18 以上）
+node --test
 ```
 
 ## データの保存
@@ -84,6 +90,14 @@ PCとスマホで同じデータを使えるよう、非公開リポジトリ `h
   "updatedAt": "2026-10-26T21:00:00+09:00"
 }
 ```
+
+記録を消した日は、データを消さずに「削除の印」を残します（PCとスマホの同期で、消したことを伝えるため）。
+
+```json
+{ "date": "2026-10-27", "deleted": true, "updatedAt": "2026-10-27T22:10:00+09:00" }
+```
+
+保存するデータには、データの形の版番号 `schemaVersion`（今は 1）がつきます。設計の詳細は [docs/DESIGN.md](docs/DESIGN.md) を参照してください。
 
 ## データの更新手順
 
