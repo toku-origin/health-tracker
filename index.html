@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>健康トラッカー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 上部：アプリ名と画面切り替えタブ -->
+<header class="top">
+  <div class="wrap top-inner">
+    <h1>健康トラッカー</h1>
+    <nav class="tabs" role="tablist" aria-label="画面の切り替え">
+      <button type="button" role="tab" id="tab-today" data-view="today" aria-selected="true">記録</button>
+      <button type="button" role="tab" id="tab-week" data-view="week" aria-selected="false">直近7日</button>
+      <button type="button" role="tab" id="tab-foods" data-view="foods" aria-selected="false">マイ食品</button>
+      <button type="button" role="tab" id="tab-config" data-view="config" aria-selected="false">設定</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- サンプルデータが残っているときだけ表示 -->
+  <div class="banner" id="sample-banner" hidden>
+    <span>過去数日分にサンプルの記録が入っています。動きを試したら削除してください。</span>
+    <button type="button" data-action="remove-samples">サンプルを削除</button>
+  </div>
+
+  <!-- ① 今日の記録 -->
+  <section id="view-today" class="view" aria-labelledby="tab-today">
+    <div class="day-nav">
+      <button type="button" class="nav-btn" data-action="prev-day">◀ 前日</button>
+      <div class="day-center">
+        <span id="day-label" class="day-label"></span>
+        <button type="button" id="go-today" class="link-btn" data-action="go-today" hidden>今日へ戻る</button>
+      </div>
+      <button type="button" class="nav-btn" id="next-day" data-action="next-day">翌日 ▶</button>
+    </div>
+
+    <article class="card" data-cat="balance">
+      <div class="card-head"><h2>カロリー収支</h2></div>
+      <div id="balance"></div>
+    </article>
+
+    <article class="card" data-cat="body">
+      <div class="card-head"><h2>体重</h2><span class="summary" id="weight-summary"></span></div>
+      <label class="field inline-field" for="weight">
+        <span>今日の体重</span>
+        <span class="num"><input type="number" id="weight" inputmode="decimal" min="20" max="300" step="0.1" placeholder="0.0" data-path="body.weightKg" data-type="num"><span>kg</span></span>
+      </label>
+      <p class="note" id="weight-diff"></p>
+    </article>
+
+    <article class="card" data-cat="exercise">
+      <div class="card-head"><h2>運動</h2><span class="summary" id="ex-summary"></span></div>
+      <p class="note" id="ex-note" hidden>体重を記録すると、運動ごとの消費カロリーを計算します。</p>
+      <div id="exercise-list" class="stack"></div>
+      <div class="chips" id="exercise-chips" aria-label="よく使う運動を追加"></div>
+      <button type="button" class="add-btn" data-action="add-exercise">＋ 運動を追加</button>
+      <datalist id="ex-types"></datalist>
+      <label class="field inline-field" for="steps">
+        <span>歩数（1日の合計）</span>
+        <span class="num"><input type="number" id="steps" inputmode="numeric" min="0" placeholder="0" data-path="steps" data-type="int"><span>歩</span></span>
+      </label>
+    </article>
+
+    <article class="card" data-cat="meal">
+      <div class="card-head"><h2>食事</h2><span class="summary" id="meal-summary"></span></div>
+      <div id="meal-list" class="stack"></div>
+      <button type="button" class="add-btn" data-action="add-meal">＋ 食事を追加</button>
+      <div class="nutri" id="nutrition-panel"></div>
+    </article>
+
+    <article class="card" data-cat="sleep">
+      <div class="card-head"><h2>睡眠</h2><span class="summary" id="sleep-summary"></span></div>
+      <div class="field-grid">
+        <label class="field" for="bedtime"><span>就寝（前日の夜）</span><input type="time" id="bedtime" data-path="sleep.bedtime"></label>
+        <label class="field" for="wake-time"><span>起床</span><input type="time" id="wake-time" data-path="sleep.wakeTime"></label>
+        <label class="field" for="nap"><span>昼寝</span><span class="num"><input type="number" id="nap" inputmode="numeric" min="0" placeholder="0" data-path="sleep.napMinutes" data-type="int"><span>分</span></span></label>
+      </div>
+    </article>
+
+    <article class="card" data-cat="water">
+      <div class="card-head"><h2>水分</h2><span class="summary" id="water-summary"></span></div>
+      <div class="water">
+        <button type="button" class="cup-btn" data-action="remove-cup" aria-label="1杯減らす">−</button>
+        <div class="water-total"><span id="water-big">0</span><small>mL</small></div>
+        <button type="button" class="cup-btn plus" data-action="add-cup">＋1杯</button>
+      </div>
+      <label class="field inline-field" for="water-ml">
+        <span>合計を直接入力</span>
+        <span class="num"><input type="number" id="water-ml" inputmode="numeric" min="0" step="50" placeholder="0" data-path="waterMl" data-type="int"><span>mL</span></span>
+      </label>
+    </article>
+
+    <article class="card" data-cat="cond">
+      <div class="card-head"><h2>疲労度・ストレス</h2><span class="scale-legend">1 低い ― 5 高い</span></div>
+      <div id="cond-list" class="stack"></div>
+      <label class="field" for="cond-memo"><span>メモ（任意）</span><input type="text" id="cond-memo" placeholder="例：会議が多かった" data-path="condition.memo"></label>
+    </article>
+  </section>
+
+  <!-- ② 直近7日 -->
+  <section id="view-week" class="view" aria-labelledby="tab-week" hidden>
+    <div class="stats" id="week-stats"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>日付</th><th>体重<small>kg</small></th><th>運動</th><th>歩数</th><th>睡眠</th><th>水分</th><th>疲労<small>仕事/私</small></th><th>ストレス<small>仕事/私</small></th><th>食事</th><th>摂取<small>kcal</small></th><th>収支<small>kcal</small></th></tr>
+        </thead>
+        <tbody id="week-body"></tbody>
+      </table>
+    </div>
+    <p class="hint">行をタップすると、その日の記録画面を開きます。</p>
+  </section>
+
+  <!-- ③ マイ食品（市販品・外食の栄養表示を手入力して登録） -->
+  <section id="view-foods" class="view stack" aria-labelledby="tab-foods" hidden>
+    <article class="card">
+      <h2 class="plain" id="mf-title">マイ食品を登録</h2>
+      <p class="note">成分表にない市販品や外食は、パッケージやお店の栄養表示を見て登録します。登録すると、記録画面の食材検索に出てきます。</p>
+      <p class="note strong" id="mf-return-note" hidden>登録すると、記録中の料理にそのまま追加します。</p>
+      <form id="mf-form" class="stack" novalidate>
+        <label class="field" for="mf-name"><span>名前</span><input type="text" id="mf-name" placeholder="例：コンビニのサラダチキン"></label>
+        <div class="field">
+          <span>栄養表示の基準</span>
+          <div class="seg" id="mf-basis-seg" role="group" aria-label="栄養表示の基準">
+            <button type="button" data-action="mf-basis" data-val="100g">100gあたり</button>
+            <button type="button" data-action="mf-basis" data-val="serving">1食・1個あたり</button>
+          </div>
+        </div>
+        <div class="mf-grid" id="mf-serving" hidden>
+          <label class="field" for="mf-serving-label"><span>単位の呼び方</span><input type="text" id="mf-serving-label" value="1食" placeholder="例：1個、1袋"></label>
+          <label class="field" for="mf-serving-grams"><span>その重さ（わかれば）</span><span class="num"><input type="number" id="mf-serving-grams" inputmode="decimal" min="0" step="any"><span>g</span></span></label>
+        </div>
+        <div class="mf-grid" id="mf-main"></div>
+        <details class="mf-more-wrap">
+          <summary>その他の栄養素（表示があれば）</summary>
+          <div id="mf-more"></div>
+        </details>
+        <div class="row-btns">
+          <button type="submit" class="primary" id="mf-submit">登録</button>
+          <button type="button" class="add-btn" id="mf-cancel" data-action="mf-cancel" hidden>編集をやめる</button>
+        </div>
+      </form>
+    </article>
+    <article class="card">
+      <h2 class="plain">登録済みのマイ食品</h2>
+      <div id="mf-list" class="stack"></div>
+    </article>
+  </section>
+
+  <!-- ④ 設定 -->
+  <section id="view-config" class="view stack" aria-labelledby="tab-config" hidden>
+    <article class="card">
+      <h2 class="plain">プロフィール</h2>
+      <p class="note">基礎代謝と消費カロリーの計算に使います。入力すると自動で保存されます。</p>
+      <div class="mf-grid">
+        <label class="field" for="pf-height"><span>身長</span><span class="num"><input type="number" id="pf-height" inputmode="decimal" min="100" max="250" step="0.1" placeholder="170.0"><span>cm</span></span></label>
+        <label class="field" for="pf-birth"><span>生年月</span><input type="month" id="pf-birth"></label>
+      </div>
+      <div class="field">
+        <span>性別</span>
+        <div class="seg" id="pf-sex" role="group" aria-label="性別">
+          <button type="button" data-action="pf-sex" data-val="male">男性</button>
+          <button type="button" data-action="pf-sex" data-val="female">女性</button>
+        </div>
+      </div>
+      <div class="field">
+        <span>普段の活動量（運動以外の生活）</span>
+        <div class="seg" id="pf-activity" role="group" aria-label="普段の活動量"></div>
+        <small class="note" id="pf-activity-desc"></small>
+      </div>
+      <p class="note strong" id="pf-status"></p>
+    </article>
+
+    <article class="card">
+      <h2 class="plain">運動のMETs</h2>
+      <p class="note">消費カロリー ＝ METs × 体重（kg）× 運動時間（時間）。値は変更できます。表にない運動は、強度に応じて 軽い3.0／普通4.5／きつい6.0 で計算します。</p>
+      <div class="table-wrap">
+        <table class="mets-table">
+          <thead><tr><th>運動</th><th>軽い</th><th>普通</th><th>きつい</th><th><span class="sr">削除</span></th></tr></thead>
+          <tbody id="mets-body"></tbody>
+        </table>
+      </div>
+      <div class="add-row">
+        <input type="text" id="mets-new" placeholder="運動を追加（例：水泳）" aria-label="追加する運動の名前">
+        <button type="button" class="add-btn" data-action="mets-add">追加</button>
+      </div>
+      <div class="row-btns"><button type="button" class="text-btn" data-action="mets-reset">はじめから入っている運動を表の値に戻す</button></div>
+      <p class="note">出典：改訂第2版『身体活動のメッツ(METs)表』成人版（2024年）。各強度の説明は表の活動内容です。</p>
+    </article>
+
+    <article class="card">
+      <h2 class="plain">カロリー収支の計算方法</h2>
+      <p class="note">消費 ＝ 基礎代謝 × 普段の活動量 ＋ 運動の上乗せ分。基礎代謝は国立健康・栄養研究所の式（身長・体重・年齢・性別から推定）で計算します。運動の上乗せ分は、安静時の1 METsを除いた分です（基礎代謝と二重に数えないため）。いずれも推定値です。</p>
+    </article>
+
+    <article class="card">
+      <h2 class="plain">1杯の量</h2>
+      <label class="field inline-field" for="cup-ml">
+        <span>「＋1杯」で加算する量</span>
+        <span class="num"><input type="number" id="cup-ml" inputmode="numeric" min="50" step="10"><span>mL</span></span>
+      </label>
+    </article>
+
+    <article class="card">
+      <h2 class="plain">保存先</h2>
+      <p class="note">今はこの端末のブラウザだけに保存しています。PCとスマホの同期は、GitHubと連携するステップ4で追加します。</p>
+    </article>
+
+    <article class="card">
+      <h2 class="plain">栄養計算の出典</h2>
+      <p class="note">日本食品標準成分表（八訂）増補2023年（文部科学省）から引用。食材の栄養素は可食部100gあたりの値を、入力したグラム数で換算しています。</p>
+    </article>
+
+    <article class="card">
+      <h2 class="plain">データの書き出し</h2>
+      <p class="note">記録とマイ食品をJSON形式で表示します。コピーしてバックアップに使えます（サンプルは含みません）。</p>
+      <div class="row-btns">
+        <button type="button" class="add-btn" data-action="show-export">JSONを表示</button>
+        <button type="button" class="add-btn" data-action="copy-export" id="copy-btn" hidden>コピー</button>
+      </div>
+      <textarea id="export-json" readonly hidden aria-label="書き出したJSON"></textarea>
+    </article>
+
+    <article class="card">
+      <h2 class="plain">記録の削除</h2>
+      <div class="row-btns">
+        <button type="button" class="danger-btn" data-action="ask-delete-all">すべての記録を削除</button>
+      </div>
+      <div class="confirm" id="delete-confirm" hidden>
+        <p>この端末のすべての記録を削除します。元に戻せません。</p>
+        <div class="row-btns">
+          <button type="button" class="danger-btn solid" data-action="delete-all">削除する</button>
+          <button type="button" class="add-btn" data-action="cancel-delete">やめる</button>
+        </div>
+      </div>
+    </article>
+  </section>
+</main>
+
+<!-- 下部：保存バー（記録画面のときだけ表示） -->
+<div class="savebar" id="savebar">
+  <div class="wrap savebar-inner">
+    <span class="status" id="save-status" role="status"></span>
+    <button type="button" class="primary" id="save-btn" data-action="save">保存</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="nutrients.js"></script>
+<script src="body.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
