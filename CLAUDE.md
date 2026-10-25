@@ -17,6 +17,10 @@ HTML / CSS / JavaScript だけで作っています（ビルドなし、ライ�
 - このリポジトリは**公開**。個人の健康データや個人的な事情は書かない。記録データは `health-data`（非公開）に置く。
 - 計算に使う数値（成分表、METs、推定式）は、一次資料で確認してから使い、出典をコードと README に残す。確認できない値を使うときは、そのことを明記してオーナーに伝える。
 
+## 設計書
+
+`docs/DESIGN.md` に記録項目・画面・同期方式・バーコードの設計と、作る順番がある。新しい機能は、まずここを読む。
+
 ## ファイル構成
 
 | ファイル | 役割 |
@@ -34,13 +38,17 @@ HTML / CSS / JavaScript だけで作っています（ビルドなし、ライ�
 
 ## データ
 
-- 今はブラウザの localStorage（キー `health-tracker:v1`）に `{ records, settings, myFoods }` を保存。
+- 今はブラウザの localStorage（キー `health-tracker:v1`）に `{ schemaVersion, records, settings, myFoods }` を保存。
+  `schemaVersion`（今は 1）を上げたら、`migrate` に古い形の読み替えを足す。
 - `records` は `{ "YYYY-MM-DD": 1日分の記録 }`。形は README を参照。
+- **削除の印**：消した日は `{ date, deleted: true, updatedAt }` に置き換える（同期で「消した」を伝えるため）。
+  記録を読むときは `getRecord`・`liveRecords`、マイ食品は `activeMyFoods` を通して印を除く。
 - 食材は `{ foodId, name, foodName, grams, servings, nutrients }`。運動は `{ type, minutes, intensity, mets, kcal }`。
   計算結果（`nutrients`・`mets`・`kcal`）も保存する。あとで Claude がデータだけで分析できるようにするため。
 - 古い形式（食材が文字列だった頃の記録）も `normalizeIngredient` で読めるようにしてある。
 - `settings`：`cupMl`、`profile`（`heightCm`・`birthMonth`・`sex`・`activityLevel`）、`mets`（`{ 種類: [軽い, 普通, きつい] }`）、`metsVersion`。
-- `myFoods`：`{ id: "my:...", name, basis: "100g" | "serving", servingLabel, servingGrams, values }`。
+- `myFoods`：`{ id: "my:...", name, basis: "100g" | "serving", servingLabel, servingGrams, values, updatedAt }`。
+  消したものは `deleted: true` をつけて値は残す（過去の記録の再計算に使う）。
 - 初回だけサンプルの記録（`sample: true`）が入る。書き出しには含めない。
 
 ## 計算と出典
@@ -71,7 +79,7 @@ HTML / CSS / JavaScript だけで作っています（ビルドなし、ライ�
 ## 次にやること
 
 1. **`health-data` との同期（ステップ4）**：作る前に仕組みとトークンの作り方を説明する。
-   - fine-grained personal access token（`health-data` だけ、Contents の読み書きのみ、有効期限つき）を設定画面で入力し、端末の localStorage に保存。
+   - fine-grained personal access token（`health-data` だけ、Contents の読み書きのみ、有効期限90日）を設定画面で入力し、端末の localStorage に保存。
    - 保存先：`data/YYYY-MM.json`（月ごと）、`my-foods.json`、`settings.json`。
    - 2台で同時に保存したときは、ファイルの `sha` で競合を検出して扱う。
 2. **GitHub Pages で公開**し、スマホのホーム画面に追加できるようにする（ステップ5）。
