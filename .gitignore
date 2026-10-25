@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+
+# 変換元のデータ（成分表のExcel・メッツ表のPDF）はリポジトリに入れない
+*.xlsx
+*.pdf
+data-src/
+
+# OS
+.DS_Store
